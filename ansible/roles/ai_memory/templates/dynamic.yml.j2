@@ -1,0 +1,24 @@
+http:
+  routers:
+    ai-memory:
+      rule: "Host(`{{ public_domain }}`)"
+      entryPoints:
+        - websecure
+      service: ai-memory
+      middlewares:
+        - ai-memory-security
+      tls:
+        certResolver: letsencrypt
+  services:
+    ai-memory:
+      loadBalancer:
+        servers:
+          - url: "http://ai-memory:49374"
+  middlewares:
+    ai-memory-security:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        contentTypeNosniff: true
+        frameDeny: true

@@ -1,0 +1,4 @@
+---
+- name: Restart ai-memory stack
+  ansible.builtin.command: {cmd: "{{ compose_command }} -f compose.yml up -d", chdir: "{{ deployment_dir }}"}
+  changed_when: true

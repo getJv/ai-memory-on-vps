@@ -1,0 +1,10 @@
+---
+debian_packages:
+  - ca-certificates
+  - curl
+  - docker.io
+  - docker-compose
+  - nftables
+  - python3
+  - python3-yaml
+compose_command: docker-compose

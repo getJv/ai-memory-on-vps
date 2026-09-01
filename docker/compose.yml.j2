@@ -1,0 +1,58 @@
+services:
+  traefik:
+    image: {{ traefik_image }}
+    container_name: ai-memory-traefik
+    restart: unless-stopped
+    command:
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.letsencrypt.acme.email={{ letsencrypt_email }}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --api.dashboard=false
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./letsencrypt:/letsencrypt
+      - ./dynamic.yml:/etc/traefik/dynamic.yml:ro
+    networks: [ai-memory-proxy]
+    mem_limit: {{ traefik_memory_limit }}
+    cpus: {{ traefik_cpus }}
+    logging: &default_logging
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  ai-memory:
+    image: {{ ai_memory_image }}
+    container_name: ai-memory
+    restart: unless-stopped
+    expose: ["49374"]
+    environment:
+      AI_MEMORY_BIND: {{ ai_memory_bind | to_json }}
+      AI_MEMORY_ALLOWED_HOSTS: {{ ([public_domain, 'localhost', '127.0.0.1'] | join(',')) | to_json }}
+      AI_MEMORY_AUTH__SECURE_COOKIE: "true"
+      AI_MEMORY_AUTH_TOKEN: {{ ai_memory_auth_token | to_json }}
+      AI_MEMORY_AUTH__TOKEN_PEPPER: {{ ai_memory_token_pepper | to_json }}
+      AI_MEMORY_LLM_PROVIDER: {{ ai_memory_llm_provider | to_json }}
+      AI_MEMORY_LLM_BASE_URL: {{ openrouter_base_url | to_json }}
+      AI_MEMORY_LLM_MODEL: {{ ai_memory_llm_model | to_json }}
+      AI_MEMORY_LLM_TIMEOUT_SECS: {{ ai_memory_llm_timeout_secs | to_json }}
+      AI_MEMORY_CONSOLIDATE_ON_SESSION_END: {{ ai_memory_consolidate_on_session_end | to_json }}
+      OPENAI_API_KEY: {{ openrouter_api_key | to_json }}
+    volumes: ["./data:/data"]
+    networks: [ai-memory-proxy]
+    mem_limit: {{ ai_memory_memory_limit }}
+    cpus: {{ ai_memory_cpus }}
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/ai-memory", "--data-dir", "/data", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default_logging
+networks:
+  ai-memory-proxy:
+    name: ai-memory-proxy
+    driver: bridge

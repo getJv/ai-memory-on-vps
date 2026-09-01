@@ -1,0 +1,135 @@
+#!/bin/sh
+set -eu
+
+NFT=/usr/sbin/nft
+DOCKER=/usr/bin/docker
+NETWORK=ai-memory-proxy
+OPENROUTER_HOSTS="{{ openrouter_hostnames | join(' ') }}"
+LETSENCRYPT_HOSTS="{{ letsencrypt_hostnames | default(['acme-v02.api.letsencrypt.org']) | join(' ') }}"
+
+container_ipv4() {
+  $DOCKER inspect "$1" | python3 -c '
+import json
+import sys
+
+container = json.load(sys.stdin)[0]
+print(container["NetworkSettings"]["Networks"][sys.argv[1]]["IPAddress"])
+' "$NETWORK"
+}
+
+network_ipv4_subnet() {
+  $DOCKER network inspect "$NETWORK" | python3 -c '
+import json
+import sys
+
+network = json.load(sys.stdin)[0]
+for config in network.get("IPAM", {}).get("Config", []):
+    subnet = config.get("Subnet", "")
+    if subnet and ":" not in subnet:
+        print(subnet)
+        break
+'
+}
+
+resolve_ipv4() {
+  resolved_ips=""
+  for hostname in $1; do
+    resolved=$(getent ahostsv4 "$hostname" | awk '{print $1}' | sort -u || true)
+    [ -n "$resolved" ] || {
+      echo "Cannot resolve $hostname; keeping the existing firewall policy" >&2
+      return 1
+    }
+    resolved_ips="$resolved_ips $resolved"
+  done
+  printf '%s\n' "$resolved_ips"
+}
+
+NETWORK_SUBNET=$(network_ipv4_subnet)
+[ -n "$NETWORK_SUBNET" ] || { echo "Cannot determine the Docker network IPv4 subnet" >&2; exit 1; }
+
+# A stopped Docker container has no assigned IPv4 address. During deployment,
+# install this subnet-wide deny policy before either container starts. Once both
+# are running, the normal mode below replaces it with per-container allowlists.
+if [ "${1:-}" = "--bootstrap" ]; then
+  $NFT list table inet ai_memory_filter >/dev/null 2>&1 || $NFT add table inet ai_memory_filter
+  $NFT -f - <<EOF
+delete table inet ai_memory_filter
+table inet ai_memory_filter {
+  chain input {
+    type filter hook input priority -100; policy accept;
+    ct state established,related accept
+    ip saddr $NETWORK_SUBNET drop
+  }
+  chain forward {
+    type filter hook forward priority -100; policy accept;
+    ct state established,related accept
+    ip saddr $NETWORK_SUBNET drop
+    ip daddr $NETWORK_SUBNET drop
+  }
+}
+EOF
+  exit 0
+fi
+
+AI_MEMORY_IP=$(container_ipv4 ai-memory)
+TRAEFIK_IP=$(container_ipv4 ai-memory-traefik)
+[ -n "$AI_MEMORY_IP" ] || { echo "Cannot determine the ai-memory IPv4 address" >&2; exit 1; }
+[ -n "$TRAEFIK_IP" ] || { echo "Cannot determine the Traefik IPv4 address" >&2; exit 1; }
+
+OPENROUTER_IPS=$(resolve_ipv4 "$OPENROUTER_HOSTS")
+LETSENCRYPT_IPS=$(resolve_ipv4 "$LETSENCRYPT_HOSTS")
+OPENROUTER_ELEMENTS=$(printf '%s,' $OPENROUTER_IPS | sed 's/,$//')
+LETSENCRYPT_ELEMENTS=$(printf '%s,' $LETSENCRYPT_IPS | sed 's/,$//')
+
+# Ensure the first deployment has a table to replace. The following nft batch
+# deletes and recreates it in one transaction, so a failed update keeps the
+# previous working policy instead of leaving container forwarding unfiltered.
+$NFT list table inet ai_memory_filter >/dev/null 2>&1 || $NFT add table inet ai_memory_filter
+$NFT -f - <<EOF
+delete table inet ai_memory_filter
+table inet ai_memory_filter {
+  set openrouter_ipv4 {
+    type ipv4_addr
+    flags interval
+    elements = { $OPENROUTER_ELEMENTS }
+  }
+  set letsencrypt_ipv4 {
+    type ipv4_addr
+    flags interval
+    elements = { $LETSENCRYPT_ELEMENTS }
+  }
+
+  chain input {
+    type filter hook input priority -100; policy accept;
+    ct state established,related accept
+    ip saddr { $AI_MEMORY_IP, $TRAEFIK_IP } udp dport 53 accept
+    ip saddr { $AI_MEMORY_IP, $TRAEFIK_IP } tcp dport 53 accept
+    ip saddr $NETWORK_SUBNET drop
+  }
+
+  chain forward {
+    type filter hook forward priority -100; policy accept;
+    ct state established,related accept
+
+    # Public HTTP/HTTPS reaches only the address Docker assigned to Traefik.
+    ip daddr $TRAEFIK_IP tcp dport { 80, 443 } accept
+
+    # Traefik is the only container allowed to initiate traffic to ai-memory.
+    ip saddr $TRAEFIK_IP ip daddr $AI_MEMORY_IP tcp dport 49374 accept
+
+    # Both containers may resolve names. Their HTTPS destinations are separate.
+    ip saddr $AI_MEMORY_IP udp dport 53 accept
+    ip saddr $AI_MEMORY_IP tcp dport 53 accept
+    ip saddr $AI_MEMORY_IP ip daddr @openrouter_ipv4 tcp dport 443 accept
+
+    ip saddr $TRAEFIK_IP udp dport 53 accept
+    ip saddr $TRAEFIK_IP tcp dport 53 accept
+    ip saddr $TRAEFIK_IP ip daddr @letsencrypt_ipv4 tcp dport 443 accept
+
+    # Isolate these containers without changing forwarding for unrelated VPS
+    # services, Docker networks, or VPNs.
+    ip saddr $NETWORK_SUBNET drop
+    ip daddr $NETWORK_SUBNET drop
+  }
+}
+EOF

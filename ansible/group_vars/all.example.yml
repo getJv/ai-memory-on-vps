@@ -1,0 +1,20 @@
+---
+deployment_dir: /opt/ai-memory
+public_domain: memory.example.com
+letsencrypt_email: change-me@example.com
+ai_memory_image: akitaonrails/ai-memory:1.21.0
+traefik_image: traefik:v3.3
+ai_memory_bind: "0.0.0.0:49374"
+ai_memory_llm_provider: openai-compat
+openrouter_base_url: https://openrouter.ai/api/v1
+ai_memory_llm_model: z-ai/glm-5.3-flash
+ai_memory_llm_timeout_secs: "300"
+ai_memory_consolidate_on_session_end: "false"
+ai_memory_memory_limit: 384m
+ai_memory_cpus: "0.75"
+traefik_memory_limit: 128m
+traefik_cpus: "0.25"
+openrouter_hostnames:
+  - openrouter.ai
+letsencrypt_hostnames:
+  - acme-v02.api.letsencrypt.org

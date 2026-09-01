@@ -1,0 +1,7 @@
+---
+- name: Deploy ai-memory server
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - ai_memory

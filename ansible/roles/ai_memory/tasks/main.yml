@@ -1,0 +1,118 @@
+---
+- name: Validate supported operating system
+  ansible.builtin.assert:
+    that: ["ansible_os_family == 'Debian'", "ansible_architecture in ['x86_64', 'amd64']"]
+    fail_msg: "This role supports Debian-family x86_64 VPS hosts only."
+- name: Install the selected operator SSH public key
+  ansible.builtin.lineinfile:
+    path: "/root/.ssh/authorized_keys"
+    line: "{{ ssh_public_key }}"
+    state: present
+    create: true
+    owner: root
+    group: root
+    mode: "0600"
+    insertafter: EOF
+  when: ssh_public_key | default('') | length > 0
+- name: Install host dependencies
+  ansible.builtin.apt:
+    name: "{{ debian_packages }}"
+    state: present
+    update_cache: true
+- name: Enable Docker
+  ansible.builtin.systemd: {name: docker, enabled: true, state: started}
+- name: Create deployment directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop: ["{{ deployment_dir }}", "{{ deployment_dir }}/data", "{{ deployment_dir }}/letsencrypt"]
+- name: Make ai-memory data writable by the container user
+  ansible.builtin.file:
+    path: "{{ deployment_dir }}/data"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0700"
+- name: Create ACME state file
+  ansible.builtin.file:
+    path: "{{ deployment_dir }}/letsencrypt/acme.json"
+    state: touch
+    owner: root
+    group: root
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+- name: Render Compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ deployment_dir }}/compose.yml"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart ai-memory stack
+- name: Render Traefik dynamic configuration
+  ansible.builtin.template:
+    src: dynamic.yml.j2
+    dest: "{{ deployment_dir }}/dynamic.yml"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart ai-memory stack
+- name: Render strict egress refresh script
+  ansible.builtin.template:
+    src: refresh-openrouter-egress.sh.j2
+    dest: /usr/local/sbin/refresh-openrouter-egress
+    owner: root
+    group: root
+    mode: "0750"
+- name: Install egress service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/ai-memory-egress.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Apply ai-memory container network policy
+      After=docker.service
+      Requires=docker.service
+      StartLimitIntervalSec=0
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/refresh-openrouter-egress
+      Restart=on-failure
+      RestartSec=10s
+- name: Install egress timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/ai-memory-egress.timer
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Refresh ai-memory container egress allowlists
+      [Timer]
+      OnBootSec=2min
+      OnUnitActiveSec=1h
+      Persistent=true
+      [Install]
+      WantedBy=timers.target
+- name: Prepare containers and Docker network without starting them
+  ansible.builtin.command: {cmd: "{{ compose_command }} -f compose.yml up --no-start", chdir: "{{ deployment_dir }}"}
+  changed_when: true
+- name: Block the project network before starting its containers
+  ansible.builtin.command: /usr/local/sbin/refresh-openrouter-egress --bootstrap
+  changed_when: true
+- name: Start stack under the bootstrap deny policy
+  ansible.builtin.command: {cmd: "{{ compose_command }} -f compose.yml up -d", chdir: "{{ deployment_dir }}"}
+  changed_when: true
+- name: Replace the bootstrap policy with per-container allowlists
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: ai-memory-egress.service
+    state: started
+- name: Enable the periodic egress refresh after the first policy succeeds
+  ansible.builtin.systemd:
+    name: ai-memory-egress.timer
+    enabled: true
+    state: started

@@ -40,7 +40,7 @@ services:
       AI_MEMORY_LLM_MODEL: {{ ai_memory_llm_model | to_json }}
       AI_MEMORY_LLM_TIMEOUT_SECS: {{ ai_memory_llm_timeout_secs | to_json }}
       AI_MEMORY_CONSOLIDATE_ON_SESSION_END: {{ ai_memory_consolidate_on_session_end | to_json }}
-      OPENAI_API_KEY: {{ openrouter_api_key | to_json }}
+      LLM_API_KEY: {{ openrouter_api_key | to_json }}
     volumes: ["./data:/data"]
     networks: [ai-memory-proxy]
     mem_limit: {{ ai_memory_memory_limit }}

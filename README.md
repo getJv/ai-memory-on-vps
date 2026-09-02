@@ -1,5 +1,11 @@
 # Secure ai-memory VPS Deployment
 
+<p align="center">
+  <img src="docs/images/ai-memory-vps.png" alt="ai-memory running on a VPS" width="260">
+  <br>
+  <sub>Adapted from the original ai-memory logo.</sub>
+</p>
+
 This repository helps beginners deploy [ai-memory](https://github.com/akitaonrails/ai-memory) securely on an existing Debian or Ubuntu x86_64 VPS using a personal domain.
 
 The result is a persistent ai-memory server exposed through HTTPS. The design is intentionally small enough for a VPS with 1 vCPU, 1 GB RAM, and 30 GB SSD.

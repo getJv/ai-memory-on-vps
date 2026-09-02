@@ -192,6 +192,77 @@ It asks for the remote server URL and reads `secrets/ai-memory-auth-token` by de
 
 The installer supports Linux x86_64 and aarch64. Set `AI_MEMORY_VERSION` to install another published version, or `AI_MEMORY_TOKEN_FILE` to use a token file outside this repository.
 
+## Daily usage with Codex
+
+The hooks capture normal Codex activity automatically. You do not need to run a command for every prompt or tool call.
+
+### Commands run in the terminal
+
+Run these commands from a normal shell, usually inside the project directory:
+
+```bash
+source ~/.config/ai-memory/client.env
+ai-memory status
+```
+
+Use `ai-memory status` to check the remote server, page count, sessions, observations, indexes, and configured providers.
+
+For an existing project that has never been indexed by ai-memory, run the bootstrap once:
+
+```bash
+ai-memory bootstrap
+```
+
+This creates initial context from the project. It is not necessary to run it repeatedly.
+
+When you finish an important Codex session, exit Codex first and then run:
+
+```bash
+ai-memory finalize-session
+```
+
+The Codex CLI does not expose a reliable true session-end event, so this explicit command closes the current session and makes its handoff available to the next session or agent. Use `--all` only when you intentionally want to finalize every matching open session:
+
+```bash
+ai-memory finalize-session --all
+```
+
+Recommended terminal flow:
+
+```text
+1. Work in Codex.
+2. Exit Codex with Ctrl+D or /exit.
+3. Run ai-memory finalize-session in the normal terminal.
+```
+
+### Requests made inside Codex
+
+Use the Codex conversation to ask questions about memory or to save durable knowledge:
+
+```text
+Where did we leave off?
+What do we know about this project?
+Remember permanently that this project uses PostgreSQL.
+```
+
+The first two requests use the remote MCP for retrieval. The last request creates durable wiki knowledge. Handoffs are temporary continuity notes; permanent rules and facts belong in wiki pages.
+
+### Managed workstreams and `--yolo`
+
+Normal MCP and hook usage does not require `--yolo`. The managed-workstream command is optional:
+
+```bash
+ai-memory run codex
+```
+
+It lets ai-memory manage a cross-agent workstream and its checkout. Add `--yolo` only when you deliberately want a less interactive, more automatic execution mode:
+
+```bash
+ai-memory run codex --yolo
+```
+
+For a first installation, continue using the normal `codex` command and explicit `finalize-session` workflow.
+
 ## Configuration reference
 
 Edit non-secret values in `ansible/group_vars/all.yml`.
@@ -337,6 +408,87 @@ Change the image tag or configuration in `ansible/group_vars/all.yml`, then run:
 ```
 
 Update the OpenRouter key by replacing `secrets/openrouter-api-key` and rerunning the same command. Never rotate the token pepper without understanding that native API keys will stop working.
+
+## JetBrains IDEs: AI Assistant and Junie
+
+JetBrains users can connect both AI Assistant and Junie to the same remote ai-memory MCP server. Keep these settings in the local user configuration. Do not commit them because the bearer token is included in the JSON.
+
+Replace these placeholders before using the examples:
+
+```text
+https://ai-memory.YOUR_DOMAIN/mcp
+YOUR_AI_MEMORY_AUTH_TOKEN
+```
+
+### JetBrains AI Assistant
+
+Open:
+
+```text
+Settings → Tools → AI Assistant → Model Context Protocol (MCP)
+```
+
+Choose the HTTP transport method and configure:
+
+```json
+{
+  "mcpServers": {
+    "ai-memory": {
+      "type": "streamable-http",
+      "url": "https://ai-memory.YOUR_DOMAIN/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_AI_MEMORY_AUTH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+AI Assistant uses the explicit transport declaration:
+
+```json
+"type": "streamable-http"
+```
+
+### Junie
+
+Open:
+
+```text
+Settings → Tools → Junie → Junie Model Context Protocol
+```
+
+Configure the remote server as:
+
+```json
+{
+  "mcpServers": {
+    "ai-memory": {
+      "url": "https://ai-memory.YOUR_DOMAIN/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_AI_MEMORY_AUTH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+For Junie, use `url` and `headers`; the remote configuration does not need the explicit `type` field.
+
+### Shared endpoint and security
+
+Both integrations use:
+
+```text
+Endpoint: https://ai-memory.YOUR_DOMAIN/mcp
+Header:   Authorization: Bearer YOUR_AI_MEMORY_AUTH_TOKEN
+```
+
+The JetBrains configurations are separate from the Codex configuration in `~/.codex/config.toml`. The same bearer token can be used by multiple local clients, although separate ai-memory user/API credentials are preferable when you need per-user attribution or revocation.
+
+If JetBrains offers project and user scopes, choose the user/global scope. Do not place the token in `.idea/`, project files, or any Git-tracked JSON file.
+
+Junie supports remote MCP servers in both its CLI and JetBrains IDE integrations and stores user-scope MCP configuration under `~/.junie/mcp/mcp.json`. [Junie MCP configuration](https://junie.jetbrains.com/docs/junie-cli-mcp-configuration.html)
 
 ## OpenTofu
 

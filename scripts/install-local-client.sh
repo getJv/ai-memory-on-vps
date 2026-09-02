@@ -5,6 +5,7 @@ VERSION=${AI_MEMORY_VERSION:-1.21.0}
 DEFAULT_TOKEN_FILE="$(pwd)/secrets/ai-memory-auth-token"
 CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/ai-memory
 ENV_FILE="$CONFIG_DIR/client.env"
+FISH_ENV_FILE="$CONFIG_DIR/client.fish"
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -83,6 +84,25 @@ umask 077
 } > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
+umask 077
+{
+  printf "set -gx AI_MEMORY_SERVER_URL '%s'\n" "$(printf '%s' "$SERVER_URL" | sed "s/'/'\\''/g")"
+  printf "set -gx AI_MEMORY_AUTH_TOKEN (cat '%s')\n" "$(printf '%s' "$TOKEN_FILE" | sed "s/'/'\\''/g")"
+} > "$FISH_ENV_FILE"
+chmod 600 "$FISH_ENV_FILE"
+
+add_once() {
+  rc_file=$1
+  source_line=$2
+  mkdir -p "$(dirname "$rc_file")"
+  touch "$rc_file"
+  grep -Fqx "$source_line" "$rc_file" 2>/dev/null || printf '%s\n' "$source_line" >> "$rc_file"
+}
+
+add_once "$HOME/.config/fish/config.fish" "test -f '$FISH_ENV_FILE'; and source '$FISH_ENV_FILE'"
+add_once "$HOME/.bashrc" "[ -f '$ENV_FILE' ] && . '$ENV_FILE'"
+add_once "$HOME/.zshrc" "[ -f '$ENV_FILE' ] && . '$ENV_FILE'"
+
 echo
 echo "Local ai-memory client installation completed."
 echo "Binary: $HOME/.local/bin/ai-memory"
@@ -93,3 +113,4 @@ echo
 echo "If ~/.local/bin is not already in PATH, run:"
 echo "export PATH=\"\$HOME/.local/bin:\$PATH\""
 echo "To load the server settings in a shell: source \"$ENV_FILE\""
+echo "Fish users: source \"$FISH_ENV_FILE\" (it will be loaded automatically in new shells)."

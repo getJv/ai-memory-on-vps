@@ -172,6 +172,26 @@ https://ai-memory.YOUR_DOMAIN/web
 
 Use the initial bearer token from `secrets/ai-memory-auth-token`. Create human users and API keys using the ai-memory CLI. Preserve the token pepper permanently; changing it invalidates native `aim_` API keys.
 
+## Install the local Codex client
+
+The VPS installation provides the remote server. The Codex hooks, skills, and `AGENTS.md` must be installed on the computer where Codex runs. The single helper below installs the native ai-memory binary, verifies its checksum, and configures the global user-level Codex files:
+
+```bash
+./scripts/install-local-client.sh
+```
+
+It asks for the remote server URL and reads `secrets/ai-memory-auth-token` by default. The generated locations are:
+
+```text
+~/.local/bin/ai-memory
+~/.ai-memory/hooks/
+~/.agents/skills/
+~/.codex/AGENTS.md
+~/.codex/config.toml   # MCP configuration, if generated or merged separately
+```
+
+The installer supports Linux x86_64 and aarch64. Set `AI_MEMORY_VERSION` to install another published version, or `AI_MEMORY_TOKEN_FILE` to use a token file outside this repository.
+
 ## Configuration reference
 
 Edit non-secret values in `ansible/group_vars/all.yml`.

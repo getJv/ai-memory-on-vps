@@ -2,9 +2,14 @@
 debian_packages:
   - ca-certificates
   - curl
+  - cron
   - docker.io
   - docker-compose
   - nftables
   - python3
   - python3-yaml
+  - sqlite3
 compose_command: docker-compose
+ai_memory_backup_dir: /var/backups/ai-memory
+ai_memory_backup_retention_days: 5
+ai_memory_backup_schedule: "17 */4 * * *"

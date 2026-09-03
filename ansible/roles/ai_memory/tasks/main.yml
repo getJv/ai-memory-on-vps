@@ -29,6 +29,13 @@
     group: root
     mode: "0700"
   loop: ["{{ deployment_dir }}", "{{ deployment_dir }}/data", "{{ deployment_dir }}/letsencrypt"]
+- name: Create backup directory outside the deployment tree
+  ansible.builtin.file:
+    path: "{{ ai_memory_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
 - name: Make ai-memory data writable by the container user
   ansible.builtin.file:
     path: "{{ deployment_dir }}/data"
@@ -69,6 +76,20 @@
     owner: root
     group: root
     mode: "0750"
+- name: Install SQLite backup script
+  ansible.builtin.template:
+    src: backup-memory-db.sh.j2
+    dest: /usr/local/sbin/backup-ai-memory-db
+    owner: root
+    group: root
+    mode: "0750"
+- name: Schedule SQLite backups every four hours
+  ansible.builtin.cron:
+    name: ai-memory SQLite backup
+    user: root
+    minute: "17"
+    hour: "*/4"
+    job: "/usr/local/sbin/backup-ai-memory-db"
 - name: Install egress service
   ansible.builtin.copy:
     dest: /etc/systemd/system/ai-memory-egress.service
@@ -106,6 +127,11 @@
 - name: Start stack under the bootstrap deny policy
   ansible.builtin.command: {cmd: "{{ compose_command }} -f compose.yml up -d", chdir: "{{ deployment_dir }}"}
   changed_when: true
+- name: Create the first SQLite backup when the database exists
+  ansible.builtin.command: /usr/local/sbin/backup-ai-memory-db
+  register: initial_backup
+  changed_when: initial_backup.rc == 0
+  failed_when: false
 - name: Replace the bootstrap policy with per-container allowlists
   ansible.builtin.systemd:
     daemon_reload: true

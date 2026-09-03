@@ -391,6 +391,12 @@ Back up these paths to encrypted external storage:
 /opt/ai-memory/dynamic.yml
 ```
 
+Ansible also creates a local SQLite backup outside the deployment tree at
+`/var/backups/ai-memory`. It runs every four hours, keeps backups for five
+days, and creates the first backup during deployment when the database exists.
+These local backups are only an interim safeguard; copy them to encrypted
+external storage before upgrades or other destructive server maintenance.
+
 The Markdown wiki is the source of truth. SQLite indexes are derived state and can be rebuilt using ai-memory's documented reindex workflow. Monitor resources:
 
 ```bash
